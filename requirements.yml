@@ -1,0 +1,7 @@
+name: comm_env
+dependencies:
+  - python=3.10
+  - numpy
+  - pandas
+  - plotly
+  - loguru
