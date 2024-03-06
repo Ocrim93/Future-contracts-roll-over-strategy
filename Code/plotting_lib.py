@@ -33,10 +33,11 @@ def setting_layout(figure,title):
 
 def create_figure(	data, 
 				    title,
-				    x_axis_name,
-					y_axis_name ):
+				    x_axis,
+				    y_axis,
+					y_axis_name ,):
 	
-	figure = Figure(Scatter(x=data[x_axis_name], y=data[y_axis_name],mode='lines', name = y_axis_name, line = {'color' : generator_colour()}))
+	figure = Figure(Scatter(x=data[x_axis], y=data[y_axis],mode='lines', name = y_axis_name, line = {'color' : generator_colour()}))
 	figure = setting_layout(figure,title)
 	
 	return figure	
@@ -51,12 +52,12 @@ def adding_horizontal_line(figure, value, name = 'avg'):
 
 def adding_line(figure,
 				data, 
-				title,
-				x_axis_name,
-				y_axis_name  ):
+				name,
+				x_axis,
+				y_axis  ):
 	color = generator_colour()
 	# check we need to add two lines same colour
-	figure.add_trace(Scatter(x=data[x_axis_name], y=data[y_axis_name], mode='lines', name = title, line = {'color' : color}))
+	figure.add_trace(Scatter(x=data[x_axis], y=data[y_axis], mode='lines', name = name, line = {'color' : color}))
 	return figure	
 
 

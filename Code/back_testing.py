@@ -216,7 +216,7 @@ class BackTest():
 
 	 
 	def plot(self):
-		fig = plotting_lib.create_figure(self.PnL,f'{self.commodity}_PnL','Date','Cum_Gain')
+		fig = plotting_lib.create_figure(self.PnL,f'{self.commodity}_PnL','Date','Cum_Gain',self.commodity)
 		plotting_lib.plot(fig,self.output_path)
 
 
