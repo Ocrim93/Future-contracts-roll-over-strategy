@@ -1,8 +1,24 @@
 from settings import PATH 
 from Code.back_testing import BackTest
 from Code import utilities,plotting_lib
-database = utilities.load_database(PATH.database.value)
 
+database = utilities.load_database(PATH.database.value)
+'''
+comm = 'BO'
+
+
+
+back_test = BackTest(comm,PATH.database.value,PATH.Output.value)
+
+back_test.run()
+back_test.plot()
+
+
+
+
+
+
+'''
 fig = None
 for comm in database:
 	if comm in ['LP','LT','LN','LL','LA','LX']:

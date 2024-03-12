@@ -18,6 +18,16 @@ class BackTest():
 			value = value/5
 		return value	
 
+	@staticmethod
+	def get_market_out_dates(database_path : str, commodity : str):
+		database = utilities.load_database(database_path, commodity)
+		market_out_map = {}
+		for future, df in database.items():
+			if 	'MarketOut'  in list(df.columns) :
+				market_out_df = df[df['MarketOut'].isin([1,-1])]
+				if not market_out_df.empty:
+					market_out_map[future] = market_out_df['Date'].to_list()
+		return 	market_out_map		
 
 	def __init__(self, commodity : str, 
 					   database_path : str ,
@@ -61,12 +71,12 @@ class BackTest():
 		print(expiration_date_df)
 		return expiration_date_df
 	
-	def merging_futures_data(self,database : pd.DataFrame):
+	def merging_futures_data(self,database : pd.DataFrame, column : str ):
 
 		data = pd.DataFrame({'Date' : []})
 		for future,df in database.items():
 			df = df[['Date','Price']]
-			df = df.rename(columns = {'Price' : future })
+			df = df.rename(columns = { column : future })
 			data = data.merge(df, on = 'Date', how = 'outer')
 		if data['Date'].shape[0] != data['Date'].drop_duplicates().shape[0]:
 			print('WARNING duplicate dates')
@@ -86,7 +96,7 @@ class BackTest():
 
 		data['Missing_Price'] = np.where(data['Payload'].apply(lambda x : x['tradable_day']) > 0 , True, False )
 		data['No_Tradable_Day'] = np.where(data['Payload'].apply(lambda x : ( (x['tradable_day'] == 0) and (x['missing_price_flag']))) , True, False )
-
+		data['Market_Out'] =  np.where(data['Payload'].apply(lambda x : x['event']) == 'Market_Out' , True, False )
 		data['Change (%)'] = data['Daily_Gain'].pct_change()
 		data['Cum_Gain'] = data['Daily_Gain'].cumsum()
 		
@@ -125,7 +135,8 @@ class BackTest():
 		database = utilities.load_database(self.database_path,self.commodity)
 		logger.info(f'For the commodity {self.commodity} discovering expiration dates with future paring ') 
 		expiration_date_df = self.compute_futures_pairing(database)
-		data = self.merging_futures_data(database)
+		data = self.merging_futures_data(database,'Price')
+		market_out_map = BackTest.get_market_out_dates(self.database_path,self.commodity)
 		#---------------- settings --------------------
 		starting_date = dt.datetime(1789,1,1)
 		is_rolling = False
@@ -135,6 +146,7 @@ class BackTest():
 		Payload = []
 		previous_long_future = ''
 		previous_short_future = ''
+		market_out_flag = False
 		#---------------- settings --------------------
 		logger.info('Starting back test')
 		for exp_row in expiration_date_df.itertuples():
@@ -143,11 +155,13 @@ class BackTest():
 			starting_rolling = utilities.get_starting_rolling_date(exp_row.Real_Due)
 			for idx,row in data[data['Date'] >= starting_date ].iterrows():
 				t = row.Date
+				interested_futures = [long_future,short_future,previous_long_future,previous_short_future]
 				if len(Date) == 0 and pd.isna(row[short_future]):
 					'''
 						the first pairing does not have prices in common
 					'''
 					continue
+
 				if t > starting_rolling :
 					'''it means that the current time is later than starting rolling so
 					 it is reasonable to skip this pairing'''
@@ -159,14 +173,35 @@ class BackTest():
 					previous_short_future = short_future
 					starting_date = t
 					break
+				# check market out
+				for f in interested_futures:
+					if f in market_out_map:
+						if t in market_out_map[f]:
+							print(t,market_out_map[f],f)
+							market_out_flag = True
+							value = np.nan
+							occurence = {'long_future' : long_future,
+										 'short_future' : short_future, 
+										 'previous_long_future' : previous_long_future,
+										 'previous_short_future' : previous_short_future,
+										 'event' : 'Market_Out',
+										 'missing_price_flag' :  np.nan,
+										  'tradable_day' : np.nan }
+							break			  
+						else : 
+							market_out_flag = False
+					else:
+						market_out_flag = False		
+
+				
 				#check missing price
-				missing_price_flag,temp_price = self.check_missing_price(row,[long_future,short_future,previous_long_future,previous_short_future],is_rolling)
+				missing_price_flag,temp_price = self.check_missing_price(row,interested_futures,is_rolling)
 				if  missing_price_flag and temp_price != 0 :
 					'''
 						Missing price
 					'''
 					row = row.fillna(temp_price)
-				if is_rolling :
+				if is_rolling and not market_out_flag :
 					counting_rolling += 1
 					value = BackTest.compute_value(row,long_future,short_future,previous_long_future,previous_short_future,counting_rolling)
 					occurence = {'long_future' : long_future,
@@ -179,22 +214,21 @@ class BackTest():
 					if counting_rolling == 5 :
 						is_rolling = False 
 						counting_rolling = 0
-				else:
+				elif not market_out_flag:
 					value = BackTest.compute_value(row,long_future,short_future)
 					occurence = {'long_future' : long_future,
 								 'short_future' : short_future, 
 								 'event' : 'base',
 								 'missing_price_flag' : missing_price_flag,
 								 'tradable_day' : temp_price}
-
-
+				
 				Payload.append(occurence)
 				Date.append(t)
 				Value.append(value)
 
 		logger.info('Closing positions')
 		closing_position = data[data['Date'] == t ].iloc[0]
-		missing_price_flag,temp_price = self.check_missing_price(closing_position,[long_future,short_future,previous_long_future,previous_short_future],is_rolling)
+		missing_price_flag,temp_price = self.check_missing_price(closing_position,interested_futures,is_rolling)
 		
 		if  missing_price_flag and temp_price != 0 :
 			closing_position = closing_position.fillna(temp_price)
