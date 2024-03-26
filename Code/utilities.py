@@ -6,6 +6,7 @@ import pandas as pd
 from settings import PATH
 from loguru import logger
 
+
 def create_folder(output_folder : str = None):
 	# ---------- Create folder -----------
 	for folder in  list(PATH):
@@ -42,3 +43,17 @@ def get_starting_rolling_date(date : dt.datetime):
 	b_dates  = pd.date_range(start = start, end = end, freq = 'B')
 	sixth_day = b_dates[5]
 	return sixth_day
+def lot_size_and_unit(commodity : str):
+	info = pd.read_csv(PATH.fututes_info.value,sep ='\t')
+	comm_info = info[info['Commodity'] == commodity]
+	if comm_info.empty:
+		print(logger.error(f'{commodity}'))
+		return 1,1
+	return comm_info['Lot size'].values[0],comm_info['Unit'].values[0]
+
+
+
+
+
+
+

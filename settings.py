@@ -4,6 +4,7 @@ class PATH(Enum):
 	Input = './Input'
 	Output = './Output'
 	database = f"{Input}/new_database"
+	fututes_info = f"{Input}/futures_info.csv"
 
 
 class GRAPH(Enum):

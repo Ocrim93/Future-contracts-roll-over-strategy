@@ -61,9 +61,9 @@ def adding_line(figure,
 	return figure	
 
 
-def plot(figure, folder_path, file_name = None, extension = 'png' ):
+def plot(figure, folder_path, file_name = None, extension = 'html' ):
 	if file_name == None:
 		file_name = figure.layout['title']['text']
-	iplot(figure)
-	pio.write_image(figure,f'{folder_path}/{file_name}.{extension}', format = extension)
+	#iplot(figure)
+	figure.write_html(f'{folder_path}/{file_name}.{extension}')
 
