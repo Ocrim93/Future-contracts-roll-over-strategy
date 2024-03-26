@@ -10,13 +10,12 @@ class BackTest():
 
 	
 	@staticmethod
-	def compute_value(data,long ,short, pre_long = None , pre_short = None , counting_rolling = 0):
-		if counting_rolling == 0 :
-			value =  5*(data[long] - data[short])
-		else:
-			value = counting_rolling*(BackTest.compute_value(data,long,short )) + (5-counting_rolling)*(BackTest.compute_value(data,pre_long,pre_short))
-			value = value/5
-		return value	
+	def compute_value(data : pd.DataFrame):
+		data['Value'] = np.where(data['IS_ROLLING'],  
+							data['Long'].ffill()*data['Q_Long'].ffill() - data['Short'].ffill()*data['Q_Short'].ffill() + 
+							data['Pre_Long'].ffill()*data['Q_Pre_Long'].ffill() - data['Pre_Short'].ffill()*data['Q_Pre_Short'].ffill(),
+							data['Long'].ffill()*data['Q_Long'].ffill() - data['Short'].ffill()*data['Q_Short'].ffill() )
+		return data	
 
 	@staticmethod
 	def get_market_out_dates(database_path : str, commodity : str):
@@ -32,16 +31,15 @@ class BackTest():
 	def __init__(self, commodity : str, 
 					   database_path : str ,
 					   output_path : str,
-					   contract_number : int = 5,
-					   lot_size : int = 1):
+					   contract_number : int = 5):
 
 		self.commodity = commodity
 		self.database_path = database_path
 		self.output_path = output_path
 		self.contract_number = contract_number 
-		self.lot_size = lot_size
-		self.contract_value = lot_size*contract_number
-		self.output_path = utilities.create_folder(commodity) 
+		self.lot_size,self.unit = utilities.lot_size_and_unit(commodity)
+		self.contract_value = self.lot_size*self.unit*(contract_number/5)
+		self.output_path = utilities.create_folder(commodity)
 
 	def compute_futures_pairing(self, database : pd.DataFrame):
 		futures = []
@@ -82,7 +80,6 @@ class BackTest():
 			print('WARNING duplicate dates')
 		end_date = list(data['Date'])[-1]
 		start_date = list(data['Date'])[0]
-
 		date_range = pd.date_range(start=start_date, end=end_date, freq = 'B')
 		date_range_df = pd.DataFrame(data = { 'Date' : date_range})
 
@@ -91,12 +88,9 @@ class BackTest():
 		return dataset
 	
 	def compute_PnL(self, data : pd.DataFrame):
-		data['Value'] = data['Value'].ffill()
+		data = 	BackTest.compute_value(data)
 		data['Daily_Gain'] = self.contract_value*(data['Value'] - data['Value'].shift(1))
-
-		data['Missing_Price'] = np.where(data['Payload'].apply(lambda x : x['tradable_day']) > 0 , True, False )
-		data['No_Tradable_Day'] = np.where(data['Payload'].apply(lambda x : ( (x['tradable_day'] == 0) and (x['missing_price_flag']))) , True, False )
-		data['Market_Out'] =  np.where(data['Payload'].apply(lambda x : x['event']) == 'Market_Out' , True, False )
+		data['Daily_Gain'].iloc[0] = 0.0
 		data['Change (%)'] = data['Daily_Gain'].pct_change()
 		data['Cum_Gain'] = data['Daily_Gain'].cumsum()
 		
@@ -105,30 +99,18 @@ class BackTest():
 		self.PnL = data
 		return data
 
-	def check_available_price(self,row):
-		temp_price = 0
-		row = row.drop('Date')
-		if  not row[~pd.isna(row)].empty:
-			temp_price = row[~pd.isna(row)].mean()
-		return 	temp_price
-
 	def check_missing_price(self, row , list_futures : list[str], is_rolling : bool ):
 		'''
 		Both of long and short futures have nan values
-			 check if it is a missing price or no tradable day
-				if missing price, take the mean of the available prices
-				if not missing price, fill forward the value
+			 check if it is a missing price 
 		'''
 		if not is_rolling:
 			list_futures = list_futures[0:2]
-		missing_price_flag = False
-		temp_price = 0
+		missing_price_future = []
 		for future in list_futures:
 			if pd.isna(row[future]):
-				missing_price_flag = True
-				temp_price = self.check_available_price(row)
-				break
-		return 	missing_price_flag,temp_price	
+				missing_price_future.append(future)
+		return 	missing_price_future	
 
 	def run(self):
 		logger.info('Loading database')
@@ -138,31 +120,40 @@ class BackTest():
 		data = self.merging_futures_data(database,'Price')
 		market_out_map = BackTest.get_market_out_dates(self.database_path,self.commodity)
 		#---------------- settings --------------------
+		Date = [] 
+		Long = []
+		Short = []
+		Pre_Long = []
+		Pre_Short = []
+		Q_Long = []
+		Q_Short = []
+		Q_Pre_Long= []
+		Q_Pre_Short = []
+		Rolling_over = [] 
+		Payload = []
 		starting_date = dt.datetime(1789,1,1)
 		is_rolling = False
 		counting_rolling = 0
-		Date = [] 
-		Value = []
-		Payload = []
 		previous_long_future = ''
 		previous_short_future = ''
-		market_out_flag = False
+		#market_out_flag = False
 		#---------------- settings --------------------
 		logger.info('Starting back test')
 		for exp_row in expiration_date_df.itertuples():
 			long_future = exp_row.Future
 			short_future = exp_row.Pair
+			if previous_long_future == '':
+				previous_long_future = long_future
+				previous_short_future = short_future
 			starting_rolling = utilities.get_starting_rolling_date(exp_row.Real_Due)
 			for idx,row in data[data['Date'] >= starting_date ].iterrows():
 				t = row.Date
 				interested_futures = [long_future,short_future,previous_long_future,previous_short_future]
-				if len(Date) == 0 and pd.isna(row[short_future]):
-					'''
-						the first pairing does not have prices in common
-					'''
+				if len(Date) == 0 and (pd.isna(row[short_future])) :
+					logger.warning(f'the first pairing {long_future}-{short_future} does not have available prices in common date {t}')
 					continue
-
 				if t > starting_rolling :
+					logger.warning(f'current date {t} > starting rolling {starting_rolling} -> Skip pairing')
 					'''it means that the current time is later than starting rolling so
 					 it is reasonable to skip this pairing'''
 					starting_date = t
@@ -173,13 +164,13 @@ class BackTest():
 					previous_short_future = short_future
 					starting_date = t
 					break
+				
+				'''
 				# check market out
 				for f in interested_futures:
 					if f in market_out_map:
 						if t in market_out_map[f]:
-							print(t,market_out_map[f],f)
 							market_out_flag = True
-							value = np.nan
 							occurence = {'long_future' : long_future,
 										 'short_future' : short_future, 
 										 'previous_long_future' : previous_long_future,
@@ -193,59 +184,110 @@ class BackTest():
 					else:
 						market_out_flag = False		
 
-				
+				'''
 				#check missing price
-				missing_price_flag,temp_price = self.check_missing_price(row,interested_futures,is_rolling)
-				if  missing_price_flag and temp_price != 0 :
-					'''
-						Missing price
-					'''
-					row = row.fillna(temp_price)
-				if is_rolling and not market_out_flag :
+				missing_price_future = self.check_missing_price(row,interested_futures,is_rolling) 
+				if len(missing_price_future) > 0 :
+					#logger.warning(f'Missing Price {missing_price_future}')
+					missing_price_flag = True
+				else:
+					missing_price_flag = False	
+				if missing_price_flag and is_rolling :
+					logger.warning(f'Missing price during rolling-over period {t} {missing_price_future}')
+				if is_rolling :
 					counting_rolling += 1
-					value = BackTest.compute_value(row,long_future,short_future,previous_long_future,previous_short_future,counting_rolling)
+					if pd.isna(row[long_future]):
+						if counting_rolling > 1 :
+							Q_Long.append(Q_Long[-1])
+						else:
+							Q_Long.append(5)
+					else:
+						Q_Long.append(5 - counting_rolling)
+					
+					if pd.isna(row[short_future]):
+						if counting_rolling > 1 :
+							Q_Short.append(Q_Short[-1])
+						else:
+							Q_Short.append(5)
+					else:
+						Q_Short.append(5 - counting_rolling)
+					
+					if pd.isna(row[previous_long_future]):
+						if counting_rolling > 1 :
+							Q_Pre_Long.append(Q_Pre_Long[-1])
+						else:
+							Q_Pre_Long.append(0)
+					else:
+						Q_Pre_Long.append(counting_rolling)
+					
+					if pd.isna(row[previous_short_future]):
+						if counting_rolling > 1 :
+							Q_Pre_Short.append(Q_Pre_Short[-1])
+						else:
+							Q_Pre_Short.append(0)
+					else:
+						Q_Pre_Short.append(counting_rolling)
+					
 					occurence = {'long_future' : long_future,
 								 'short_future' : short_future, 
 								 'previous_long_future' : previous_long_future,
 								 'previous_short_future' : previous_short_future,
-								 'event' : {'rolling_over' : counting_rolling},
-								 'missing_price_flag' :  missing_price_flag,
-								  'tradable_day' : temp_price }
-					if counting_rolling == 5 :
-						is_rolling = False 
-						counting_rolling = 0
-				elif not market_out_flag:
-					value = BackTest.compute_value(row,long_future,short_future)
+								 'event' : {'rolling_over' : counting_rolling}
+								 }
+					
+				else:
+					
+					Q_Long.append(5)
+					Q_Short.append(5)
+					Q_Pre_Long.append(0)
+					Q_Pre_Short.append(0)
 					occurence = {'long_future' : long_future,
 								 'short_future' : short_future, 
 								 'event' : 'base',
-								 'missing_price_flag' : missing_price_flag,
-								 'tradable_day' : temp_price}
-				
-				Payload.append(occurence)
+								 'missing_price_flag' : missing_price_flag}
+				Long.append(row[long_future])
+				Short.append(row[short_future])
+				Pre_Long.append(row[previous_long_future])
+				Pre_Short.append(row[previous_short_future])
+				Rolling_over.append(is_rolling)
 				Date.append(t)
-				Value.append(value)
+				Payload.append(occurence)
+				if counting_rolling == 5 :
+						is_rolling = False 
+						counting_rolling = 0
 
 		logger.info('Closing positions')
 		closing_position = data[data['Date'] == t ].iloc[0]
-		missing_price_flag,temp_price = self.check_missing_price(closing_position,interested_futures,is_rolling)
-		
-		if  missing_price_flag and temp_price != 0 :
-			closing_position = closing_position.fillna(temp_price)
-		value = BackTest.compute_value(closing_position,long_future,short_future,previous_long_future,previous_short_future ,counting_rolling)
 		occurence = {'long_future' : long_future,
 					'short_future' : short_future, 
 					'previous_long_future' : previous_long_future,
 					'previous_short_future' : previous_short_future,
-		 			'event' : 'Closing positions',
-					 'is_rolling' : is_rolling,
-					 'missing_price_flag' : missing_price_flag,
-					 'tradable_day' : temp_price}
-		Payload.append(occurence)				 
-		Date.append(starting_date)
-		Value.append(value)
+		 			'event' : 'Closing positions'
+		 			}
+		Long.append(row[long_future])
+		Short.append(row[short_future])
+		Pre_Long.append(row[previous_long_future])
+		Pre_Short.append(row[previous_short_future])
+		Date.append(t)
+		Payload.append(occurence)
+		Q_Long.append(Q_Long[-1])
+		Q_Short.append(Q_Short[-1])
+		Q_Pre_Long.append(Q_Pre_Long[-1])
+		Q_Pre_Short.append(Q_Pre_Short[-1])
+		Rolling_over.append(False)
 
-		result = pd.DataFrame({'Date': Date, 'Value' : Value, 'Payload' : Payload})
+
+		result = pd.DataFrame({'Date': Date, 
+							   'Long' : Long, 
+							   'Short' : Short,
+							   'Pre_Long' : Pre_Long,
+							   'Pre_Short' : Pre_Short,
+							   'Q_Long' : Q_Long,
+							   'Q_Short' : Q_Short,
+							   'Q_Pre_Long' : Q_Pre_Long,
+							   'Q_Pre_Short' : Q_Pre_Short,
+							   'IS_ROLLING' : Rolling_over,
+							   'Payload' : Payload})
 		PnL_df = self.compute_PnL(result)
 
 	 

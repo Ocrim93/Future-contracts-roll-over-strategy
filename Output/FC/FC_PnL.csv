@@ -1,2 +1,0 @@
-,Date,Value,Payload,Daily_Gain,Missing_Price,No_Tradable_Day,Market_Out,Change (%),Cum_Gain
-0,2022-11-17,-147.5,"{'long_future': 'FCX22', 'short_future': 'FCX23', 'previous_long_future': '', 'previous_short_future': '', 'event': 'Closing positions', 'is_rolling': False, 'missing_price_flag': False, 'tradable_day': 0}",,False,False,False,,
