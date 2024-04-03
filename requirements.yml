@@ -1,7 +1,10 @@
-name: comm_env
+name: crypto_env
 dependencies:
   - python=3.10
   - numpy
   - pandas
   - plotly
   - loguru
+  - openpyxl
+  - pip:
+    - ondemand
