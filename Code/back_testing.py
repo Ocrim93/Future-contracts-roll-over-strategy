@@ -87,6 +87,7 @@ class BackTest():
 		dataset.sort_values(by = 'Date', inplace = True, ignore_index= True, ascending = True)	
 		return dataset
 	
+
 	def compute_PnL(self, data : pd.DataFrame):
 		data = 	BackTest.compute_value(data)
 		data['Daily_Gain'] = self.contract_value*(data['Value'] - data['Value'].shift(1))
@@ -129,6 +130,12 @@ class BackTest():
 		Q_Short = []
 		Q_Pre_Long= []
 		Q_Pre_Short = []
+		
+		Closing_Long = []
+		Closing_Short = []
+		Closing_Pre_Long= []
+		Closing_Pre_Short = []
+		
 		Rolling_over = [] 
 		Payload = []
 		starting_date = dt.datetime(1789,1,1)
@@ -142,9 +149,6 @@ class BackTest():
 		for exp_row in expiration_date_df.itertuples():
 			long_future = exp_row.Future
 			short_future = exp_row.Pair
-			if previous_long_future == '':
-				previous_long_future = long_future
-				previous_short_future = short_future
 			starting_rolling = utilities.get_starting_rolling_date(exp_row.Real_Due)
 			for idx,row in data[data['Date'] >= starting_date ].iterrows():
 				t = row.Date
@@ -194,61 +198,73 @@ class BackTest():
 					missing_price_flag = False	
 				if missing_price_flag and is_rolling :
 					logger.warning(f'Missing price during rolling-over period {t} {missing_price_future}')
+				#------------------- ROLLING PERIOD ---------------------------------------------------------	
 				if is_rolling :
 					counting_rolling += 1
 					if pd.isna(row[long_future]):
 						if counting_rolling > 1 :
 							Q_Long.append(Q_Long[-1])
 						else:
-							Q_Long.append(5)
+							Q_Long.append(0)
 					else:
-						Q_Long.append(5 - counting_rolling)
+						Q_Long.append(counting_rolling)
 					
 					if pd.isna(row[short_future]):
 						if counting_rolling > 1 :
 							Q_Short.append(Q_Short[-1])
 						else:
-							Q_Short.append(5)
+							Q_Short.append(0)
 					else:
-						Q_Short.append(5 - counting_rolling)
+						Q_Short.append( counting_rolling)
 					
 					if pd.isna(row[previous_long_future]):
+						Closing_Pre_Long.append(0)
 						if counting_rolling > 1 :
 							Q_Pre_Long.append(Q_Pre_Long[-1])
 						else:
-							Q_Pre_Long.append(0)
+							Q_Pre_Long.append(5)
 					else:
-						Q_Pre_Long.append(counting_rolling)
+						Closing_Pre_Long.append(counting_rolling)
+						Q_Pre_Long.append(5 - counting_rolling)
 					
 					if pd.isna(row[previous_short_future]):
+						Closing_Pre_Short.append(0)
 						if counting_rolling > 1 :
 							Q_Pre_Short.append(Q_Pre_Short[-1])
 						else:
-							Q_Pre_Short.append(0)
+							Q_Pre_Short.append(5)
 					else:
-						Q_Pre_Short.append(counting_rolling)
+						Closing_Pre_Short.append(counting_rolling)
+						Q_Pre_Short.append( 5 - counting_rolling)
 					
+					Closing_Long.append(0)
+					Closing_Short.append(0)
+
 					occurence = {'long_future' : long_future,
 								 'short_future' : short_future, 
 								 'previous_long_future' : previous_long_future,
 								 'previous_short_future' : previous_short_future,
 								 'event' : {'rolling_over' : counting_rolling}
 								 }
-					
+				#------------------- ROLLING PERIOD ---------------------------------------------------------		
 				else:
 					
 					Q_Long.append(5)
 					Q_Short.append(5)
 					Q_Pre_Long.append(0)
 					Q_Pre_Short.append(0)
+					Closing_Long.append(0)
+					Closing_Short.append(0)
+					Closing_Pre_Long.append(0)
+					Closing_Pre_Short.append(0)
 					occurence = {'long_future' : long_future,
 								 'short_future' : short_future, 
 								 'event' : 'base',
 								 'missing_price_flag' : missing_price_flag}
 				Long.append(row[long_future])
 				Short.append(row[short_future])
-				Pre_Long.append(row[previous_long_future])
-				Pre_Short.append(row[previous_short_future])
+				Pre_Long.append(row[previous_long_future] if previous_long_future != '' else np.nan)
+				Pre_Short.append(row[previous_short_future] if previous_short_future != '' else np.nan)
 				Rolling_over.append(is_rolling)
 				Date.append(t)
 				Payload.append(occurence)
@@ -256,7 +272,7 @@ class BackTest():
 						is_rolling = False 
 						counting_rolling = 0
 
-		logger.info('Closing positions')
+		logger.info('Closing ALL positions')
 		closing_position = data[data['Date'] == t ].iloc[0]
 		occurence = {'long_future' : long_future,
 					'short_future' : short_future, 
@@ -270,10 +286,17 @@ class BackTest():
 		Pre_Short.append(row[previous_short_future])
 		Date.append(t)
 		Payload.append(occurence)
-		Q_Long.append(Q_Long[-1])
-		Q_Short.append(Q_Short[-1])
-		Q_Pre_Long.append(Q_Pre_Long[-1])
-		Q_Pre_Short.append(Q_Pre_Short[-1])
+		
+		Closing_Long.append(Q_Long[-1])
+		Closing_Short.append(Q_Short[-1])
+		Closing_Pre_Long.append(Q_Pre_Long[-1])
+		Closing_Pre_Short.append(Q_Pre_Short[-1])
+
+		Q_Long.append(0)
+		Q_Short.append(0)
+		Q_Pre_Long.append(0)
+		Q_Pre_Short.append(0)
+
 		Rolling_over.append(False)
 
 
@@ -288,6 +311,7 @@ class BackTest():
 							   'Q_Pre_Short' : Q_Pre_Short,
 							   'IS_ROLLING' : Rolling_over,
 							   'Payload' : Payload})
+
 		PnL_df = self.compute_PnL(result)
 
 	 
