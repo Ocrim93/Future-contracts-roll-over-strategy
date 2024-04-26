@@ -3,7 +3,8 @@ from enum import Enum
 class PATH(Enum):
 	Input = './Input'
 	Output = './Output'
-	excel_file = f'{Input}/BTC 2019 - 2023.xlsx'
+	database = f'{Input}/new_database'
+	fututes_info = f'{Input}/futures_info.csv'
 
 class GRAPH(Enum):
 	font_family="Courier New"

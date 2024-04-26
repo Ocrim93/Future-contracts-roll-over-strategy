@@ -4,13 +4,14 @@ from . import utilities
 import datetime as dt
 
 
+LIST_SYMBOL = ['F','G','H','J','K','M','N','Q','U','V','X','Z']
+
 def get_map_month_symbol(reverse = False ):
 	
-	list_symbol = ['F','G','H','J','K','M','N','Q','U','V','X','Z']
 	if reverse:
-		map_month_symbol = {  symbol : idx+1  for idx,symbol in  enumerate(list_symbol)}
+		map_month_symbol = {  symbol : idx+1  for idx,symbol in  enumerate(LIST_SYMBOL)}
 	else:
-		map_month_symbol = { idx+1 : symbol for idx,symbol in  enumerate(list_symbol)}
+		map_month_symbol = { idx+1 : symbol for idx,symbol in  enumerate(LIST_SYMBOL)}
 	return map_month_symbol
 
 def get_year_symbol(year):
@@ -30,8 +31,7 @@ def get_future_symbol(commodity,year,month):
 
 def get_map_month_symbol(reverse = False ):
 
-	list_symbol = ['F','G','H','J','K','M','N','Q','U','V','X','Z']
-	map_month_symbol = { idx+1 : symbol for idx,symbol in  enumerate(list_symbol)}
+	map_month_symbol = { idx+1 : symbol for idx,symbol in  enumerate(LIST_SYMBOL)}
 	if reverse:
 		map_month_symbol = { map_month_symbol[key] : key for key in  map_month_symbol }
 	return map_month_symbol
@@ -52,6 +52,6 @@ def get_expiration_date_from_futures(future_symbol):
 			print('ERROR ',future_symbol)
 	else:
 		print('ERROR ',future_symbol)
-	date = MonthEnd().rollforward(dt.datetime(year,month,1))
-	return date	
-
+	#date = MonthEnd().rollforward(dt.datetime(year,month,1))
+	return (year,month)
+	#return date
