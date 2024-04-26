@@ -61,9 +61,11 @@ def adding_line(figure,
 	return figure	
 
 
-def plot(figure, folder_path, file_name = None, extension = 'html' ):
+def plot(figure, folder_path, file_name = None, extension = 'html', PLOT = False, SAVE = False):
 	if file_name == None:
 		file_name = figure.layout['title']['text']
-	#iplot(figure)
-	figure.write_html(f'{folder_path}/{file_name}.{extension}')
+	if PLOT:
+		iplot(figure)
+	if SAVE:
+		figure.write_html(f'{folder_path}/{file_name}.{extension}')
 

@@ -1,5 +1,10 @@
-from Module.extract_data import Extract
+from Code.back_testing import BackTest
+from Code.utilities import load_database
 from settings import PATH
 
-extract_obj = Extract(PATH.excel_file.value)
-extract_obj.from_excel()
+
+database = load_database(PATH.database.value)
+
+for comm in database:
+	b = BackTest(comm)	
+	b.run()
