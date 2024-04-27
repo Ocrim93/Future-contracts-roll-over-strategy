@@ -229,7 +229,7 @@ class BackTest():
 		#---------------- settings --------------------
 		logger.info('Starting back test')
 		for exp_row in expiration_date_df.itertuples():
-			futures = {'long' : exp_row.Future, 'short' : exp_row.Pair}
+			futures = {'long' : exp_row.Pair, 'short' : exp_row.Future}
 			starting_rolling = utilities.get_starting_rolling_date(exp_row.Due)
 			for idx,row in data[data['Date'] >= starting_date ].iterrows():
 				if long_short_map == {} and (pd.isna(row[futures['short']])) :
