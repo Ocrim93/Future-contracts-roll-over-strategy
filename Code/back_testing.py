@@ -38,7 +38,7 @@ class BackTest():
 
 		self.sharp_ratio = pd.DataFrame()
 
-	def compute_sharp_ratio(self,distance : int):
+	def compute_sharp_ratio(self,distance : int,due_shift : int ):
 		TRADING_DAYS = 252
 		pnl = self.PnL['PNL'] 
 		std = pnl.std()
@@ -48,9 +48,10 @@ class BackTest():
 		sharp_ratio = (pnl.iloc[-1] - pnl.iloc[0])/(annualized_std)
 		logger.info(f'{self.commodity} std : {std} annualized_std : {annualized_std} sharp_ratio : {sharp_ratio}')
 		sharp_df = pd.DataFrame(data = { 'Distance' : [distance],
-							  'std': [annualized_std],
-							   'cuml_pnl' : [annualized_cum_pnl],
-							   'sharp_ratio' : [sharp_ratio] })
+										 'Due_Shift' : [due_shift],
+										  'STD': [annualized_std],
+										   'Cuml_PnL' : [annualized_cum_pnl],
+										   'Sharp_Ratio' : [sharp_ratio] })
 
 		self.sharp_ratio = pd.concat([self.sharp_ratio,sharp_df])
 		
@@ -93,7 +94,7 @@ class BackTest():
 
 		self.expiration_date_df = expiration_date_df
 
-	def futures_pairing(self,distance : int ):
+	def futures_pairing(self,distance : int, due_shift : int):
 		expiration_date_df = self.expiration_date_df
 		futures = expiration_date_df['Future'].to_list()
 		configuration = self.configuration[distance]
@@ -101,12 +102,13 @@ class BackTest():
 		for future in futures:
 			month = future[2]		
 			exp_date = expiration_date_df[expiration_date_df['Future'] == future]['Due'].values[0]
-			mask =  (expiration_date_df['Month'] ==  configuration[month]) & (expiration_date_df['Due'] >  exp_date)
+			mask =  (expiration_date_df['Month'] ==  configuration[month]) & (expiration_date_df['Due'] > exp_date)
 			if not expiration_date_df.loc[mask, 'Future'].empty:
 				pair =  expiration_date_df.loc[mask, 'Future'].values[0]
 				expiration_date_df.loc[(expiration_date_df['Future'] == future),'Pair'] = pair
-		logger.info('Drop NaN values')
 		expiration_date_df = expiration_date_df[(expiration_date_df['Pair'] != 'nan')]
+		expiration_date_df['Due'] = expiration_date_df['Due'].shift(due_shift)
+		expiration_date_df.dropna(inplace=True)
 		expiration_date_df.reset_index(inplace = True, drop = True)
 		expiration_date_df.to_csv(f'{self.configuration_path}/{self.commodity}_pairing.csv')
 		
@@ -167,7 +169,6 @@ class BackTest():
 		# merging with rolling over period
 		final_df = final_df.merge(rolling_over_df, how = 'left', on = 'Date')
 		logger.info('Saving PnL outcome')
-		print(final_df)
 		final_df.to_csv(f'{self.configuration_path}/{self.commodity}_PnL.csv')
 		self.PnL = final_df
 
@@ -209,9 +210,9 @@ class BackTest():
 			long_short_map[future]['long_short'].append(position)
 		return long_short_map
 
-	def single_run(self, distance):
+	def single_run(self, distance, due_shift):
 		logger.info(f'For the commodity {self.commodity} discovering future pairing ') 
-		expiration_date_df = self.futures_pairing(distance)
+		expiration_date_df = self.futures_pairing(distance, due_shift)
 		if expiration_date_df.empty:
 			logger.info(f'{self.commodity} no pairings found ')
 			return 
@@ -232,8 +233,8 @@ class BackTest():
 			futures = {'long' : exp_row.Pair, 'short' : exp_row.Future}
 			starting_rolling = utilities.get_starting_rolling_date(exp_row.Due)
 			for idx,row in data[data['Date'] >= starting_date ].iterrows():
-				if long_short_map == {} and (pd.isna(row[futures['short']])) :
-					logger.info(f'the first pairing {futures["long"]}-{futures["short"]} does not have available prices in common date {row.Date}')
+				if long_short_map == {} and (pd.isna(row[futures['short']]) or pd.isna(row[futures['long']]) ) :
+					logger.info(f'the first pairing {futures["short"]}-{futures["long"]} does not have available prices in common date {row.Date}')
 					continue
 				if row.Date > starting_rolling :
 					logger.info(f'current date {row.Date} > starting rolling {starting_rolling} -> Skip pairing')
@@ -278,11 +279,11 @@ class BackTest():
 		rolling_over_df = pd.DataFrame(rolling_over,columns = ['IS_ROLLING','Date', 'Day'])
 		#rolling_over_df = rolling_over_df.astype({'IS_ROLLING': bool})
 		self.compute_PnL(long_short_map,rolling_over_df)
-		self.compute_sharp_ratio(distance)
-		self.save_plot(distance)
+		self.compute_sharp_ratio(distance,due_shift)
+		self.save_plot(distance,due_shift)
 
-	def save_plot(self, distance : int):
-		fig = plotting_lib.create_figure(self.PnL,f'{self.commodity}_{distance}_PnL','Date','PNL',self.commodity)
+	def save_plot(self, distance : int, due_shift : int):
+		fig = plotting_lib.create_figure(self.PnL,f'{self.commodity}_{distance}_{due_shift}_PnL','Date','PNL',self.commodity)
 		self.figure = fig
 		logger.info(f'Save Image plot {self.commodity}')
 		plotting_lib.plot(fig,self.configuration_path,SAVE = True)
@@ -297,13 +298,14 @@ class BackTest():
 		self.data = self.merging_futures_data(database,'Price')
 		self.market_out_map = BackTest.get_market_out_dates(self.database_path,self.commodity)
 
-		for i in self.configuration :
-			self.configuration_path = utilities.get_output_path(self.commodity,i)
-			logger.info(f'Starting configuration {self.configuration[i]}')
-			self.single_run(i)
+		for conf in self.configuration :
+			for due_shift in range(len(self.configuration.keys())):
+				self.configuration_path = utilities.get_output_path(self.commodity,conf,due_shift)
+				logger.info(f'Starting configuration {self.configuration[conf]} with due shift {due_shift}' )
+				self.single_run(conf,due_shift)
 		logger.info('Saving sharp ratios')
 		self.sharp_ratio.reset_index(drop=True,inplace= True)
-		self.sharp_ratio.sort_values(by = 'sharp_ratio', inplace = True, ignore_index= True, ascending = False)
+		self.sharp_ratio.sort_values(by = 'Sharp_Ratio', inplace = True, ignore_index= True, ascending = False)
 
 		self.sharp_ratio.to_csv(f'{self.output_path}/{self.commodity}_sharp_ratio.csv')
 
