@@ -1,6 +1,0 @@
-	Date	Price	long_short	Quantity	IS_ROLLING	Day	Pnl	cum_PnL
-0	2000-01-10	485.25	long	4	True	1		
-1	2000-01-11	479.5	long	3	True	2	-23.0	-23.0
-2	2000-01-12	480.5	long	2	True	3	3.0	-20.0
-3	2000-01-13	477.0	long	1	True	4	-7.0	-27.0
-4	2000-01-14	471.75	long	0	True	5	-5.25	-32.25

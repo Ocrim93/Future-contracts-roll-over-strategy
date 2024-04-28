@@ -1,4 +1,5 @@
 Input/new_database
 Input/futures_info.csv
+Output/*
 .DS_Store
 **/**/__pycache__

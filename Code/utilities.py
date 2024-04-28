@@ -68,11 +68,11 @@ def save_data_per_future(path : str , dataset : pd.DataFrame,future :  str):
 def get_database_path():
 	return PATH.database.value
 
-def get_output_path(commodity :str, pairing_distance : int  = None):
+def get_output_path(commodity :str, pairing_distance : int  = None, due_shift : int  = None):
 	if pairing_distance == None:
 		path = create_folder(output_folder = f'{commodity}')
 	else:
-		path = create_folder(output_folder = f'{commodity}/{pairing_distance}')
+		path = create_folder(output_folder = f'{commodity}/{pairing_distance}/{due_shift}')
 	return path
 
 
