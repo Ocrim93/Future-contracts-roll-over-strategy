@@ -4,8 +4,7 @@ from settings import PATH
 
 
 database = load_database(PATH.database.value)
-comm = 'CO'
-#for comm in database:
-
-b = BackTest(comm)	
-b.run()
+comm = 'C '
+for comm in database:
+	b = BackTest(comm)	
+	b.run()

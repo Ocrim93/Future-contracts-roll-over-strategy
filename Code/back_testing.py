@@ -8,6 +8,7 @@ from . import plotting_lib
 from collections import defaultdict 
 from functools import reduce	
 
+pd.option_context("future.no_silent_downcasting", True)
 class BackTest():
 
 
@@ -40,12 +41,13 @@ class BackTest():
 
 	def compute_sharp_ratio(self,distance : int,due_shift : int ):
 		TRADING_DAYS = 252
-		pnl = self.PnL['PNL'] 
+		pnl = self.PnL['PNL']
+		cum_pnl = self.PnL['cum_PNL']  
 		std = pnl.std()
 
 		annualized_std = std*np.sqrt(TRADING_DAYS)
-		annualized_cum_pnl = (pnl.iloc[-1] - pnl.iloc[0])*TRADING_DAYS/pnl.shape[0]
-		sharp_ratio = (pnl.iloc[-1] - pnl.iloc[0])/(annualized_std)
+		annualized_cum_pnl = (cum_pnl.iloc[-1] - cum_pnl.iloc[0])*TRADING_DAYS/cum_pnl.shape[0]
+		sharp_ratio = annualized_cum_pnl/annualized_std
 		logger.info(f'{self.commodity} std : {std} annualized_std : {annualized_std} sharp_ratio : {sharp_ratio}')
 		sharp_df = pd.DataFrame(data = { 'Distance' : [distance],
 										 'Due_Shift' : [due_shift],
@@ -107,7 +109,8 @@ class BackTest():
 				pair =  expiration_date_df.loc[mask, 'Future'].values[0]
 				expiration_date_df.loc[(expiration_date_df['Future'] == future),'Pair'] = pair
 		expiration_date_df = expiration_date_df[(expiration_date_df['Pair'] != 'nan')]
-		expiration_date_df['Due'] = expiration_date_df['Due'].shift(due_shift)
+		expiration_date_df = expiration_date_df.iloc[::due_shift+1]
+		#expiration_date_df['Due'] = expiration_date_df['Due'].shift(due_shift)
 		expiration_date_df.dropna(inplace=True)
 		expiration_date_df.reset_index(inplace = True, drop = True)
 		expiration_date_df.to_csv(f'{self.configuration_path}/{self.commodity}_pairing.csv')
@@ -143,16 +146,22 @@ class BackTest():
 				position_df =   future_df[ (future_df['long_short'] == position)]
 				quant_adj = position_df['Quantity'].shift(1)
 				quant_adj = quant_adj.fillna(0)
-				price = future_df.loc[ (future_df['long_short'] == position),'Price'] .ffill()
+				price = future_df.loc[ (future_df['long_short'] == position),'Price'].ffill()
 				if not future_df['long_short'].isin([position]).empty:
 					future_df.loc[ (future_df['long_short'] == position),'Pnl'] = mult*(price - price.shift(1))*quant_adj
 					# to avoid warning to setting up column previously float64 and then object due to the presence of NaN or NaT
 					future_df = future_df.astype({'Pnl' : 'object'})
 
-			future_df['cum_PnL'] = future_df['Pnl'].cumsum()
+			#future_df['cum_PnL'] = future_df['Pnl'].cumsum()
 			utilities.save_data_per_future(self.configuration_path,future_df,future)
-			future_df = future_df.rename(columns = {'cum_PnL' : future})
-			dfs.append(future_df[['Date', future]])
+			future_df = future_df.rename(columns = {'Pnl' : future})
+			future_df = future_df[['Date', future]]
+			# when we short and long the same futures at the same time 
+			# we find tow rows with the same date but 2 PnLs: one short and one long 
+			# we need to group by 
+			future_df= future_df.groupby('Date').sum()
+			future_df.reset_index(inplace=True)
+			dfs.append(future_df)
 		return dfs
 	
 	def compute_PnL(self,long_short_map,rolling_over_df):
@@ -165,6 +174,7 @@ class BackTest():
 
 		final_df['PnL'] = final_df[[col  for col in final_df.columns if col != 'Date']].sum(axis=1)
 		final_df['PNL'] = final_df['PnL']*self.contract_value
+		final_df['cum_PNL'] = final_df['PNL'].cumsum()
 		
 		# merging with rolling over period
 		final_df = final_df.merge(rolling_over_df, how = 'left', on = 'Date')
@@ -283,7 +293,7 @@ class BackTest():
 		self.save_plot(distance,due_shift)
 
 	def save_plot(self, distance : int, due_shift : int):
-		fig = plotting_lib.create_figure(self.PnL,f'{self.commodity}_{distance}_{due_shift}_PnL','Date','PNL',self.commodity)
+		fig = plotting_lib.create_figure(self.PnL,f'{self.commodity}_{distance}_{due_shift}_PnL','Date','cum_PNL',self.commodity)
 		self.figure = fig
 		logger.info(f'Save Image plot {self.commodity}')
 		plotting_lib.plot(fig,self.configuration_path,SAVE = True)

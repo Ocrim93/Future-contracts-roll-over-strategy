@@ -7,7 +7,7 @@
 
 The strategy is based on the following steps:
 - Finding a pair of futures on the same commodity whose expiration dates are 1 year apart.
-* Long on the future with earliest expiration date and short on future with latest expiration date
+* Short on the future with earliest expiration date and Long on future with latest expiration date
 * Rolling over new futures pair on the 6th, 7th, 8th, 9th and 10th business dates of the long future expiration month
 + Compute PnL, cumulative gain and plot them 
 

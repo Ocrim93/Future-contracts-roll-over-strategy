@@ -50,7 +50,7 @@ def lot_size_and_unit(commodity : str):
 	info = pd.read_csv(PATH.fututes_info.value,sep ='\t')
 	comm_info = info[info['Commodity'] == commodity]
 	if comm_info.empty:
-		print(logger.error(f'{commodity}'))
+		logger.error(f'{commodity}')
 		return 1,1
 	return comm_info['Lot size'].values[0],comm_info['Unit'].values[0]
 
@@ -61,7 +61,7 @@ def find_sequence(months : list):
 			squence.append(m)
 	return squence		
 
-def save_data_per_future(path : str , dataset : pd.DataFrame,future :  str):
+def save_data_per_future(path : str , dataset : pd.DataFrame, future :  str):
 	folder_path = create_folder(path = f'{path}/data')
 	dataset.to_csv(f'{folder_path}/{future}.csv', sep = '\t')
 
