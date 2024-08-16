@@ -141,6 +141,8 @@ class BackTest():
 		for future in long_short_map:
 			future_df = pd.DataFrame(long_short_map[future])
 			future_df = future_df.merge(rolling_over_df,how = 'left', on = 'Date')
+			future_df.loc[future_df['Price'].isna(),'Price'] =  np.nan
+			future_df['Price'] = future_df['Price'].astype('float')
 			for position in ['long','short']:
 				mult = 1 if position == 'long' else -1 
 				position_df =   future_df[ (future_df['long_short'] == position)]
@@ -311,12 +313,14 @@ class BackTest():
 		for conf in self.configuration :
 			for due_shift in range(len(self.configuration.keys())):
 				self.configuration_path = utilities.get_output_path(self.commodity,conf,due_shift)
+				utilities.log_inizialization(self.configuration_path)
 				logger.info(f'Starting configuration {self.configuration[conf]} with due shift {due_shift}' )
 				self.single_run(conf,due_shift)
+				logger.remove()
 		logger.info('Saving sharp ratios')
 		self.sharp_ratio.reset_index(drop=True,inplace= True)
 		self.sharp_ratio.sort_values(by = 'Sharp_Ratio', inplace = True, ignore_index= True, ascending = False)
-
 		self.sharp_ratio.to_csv(f'{self.output_path}/{self.commodity}_sharp_ratio.csv')
+
 
 

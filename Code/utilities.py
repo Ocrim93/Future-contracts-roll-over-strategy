@@ -6,6 +6,7 @@ import pandas as pd
 from settings import PATH
 from Code.Bloomberg_formatting import LIST_SYMBOL 
 from loguru import logger
+import datetime as dt
 
 
 def create_folder(path : str = PATH.Output.value, output_folder : str = None):
@@ -20,6 +21,10 @@ def create_folder(path : str = PATH.Output.value, output_folder : str = None):
 		logger.info(f'Create folder {creation_path}')
 	
 	return  creation_path
+
+def log_inizialization(path :  str):
+	today = dt.datetime.now().strftime('%d%b%Y')
+	logger.add(f"{path}/log",enqueue=True)
 
 def load_database(file_path : str, commodity : str = None):
 	pkl_file = open(file_path, 'rb')
