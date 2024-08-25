@@ -24,7 +24,7 @@ def create_folder(path : str = PATH.Output.value, output_folder : str = None):
 
 def log_inizialization(path :  str):
 	today = dt.datetime.now().strftime('%d%b%Y')
-	logger.add(f"{path}/log",enqueue=True)
+	logger.add(f"{path}/log",enqueue=False, mode = 'x')
 
 def load_database(file_path : str, commodity : str = None):
 	pkl_file = open(file_path, 'rb')
@@ -51,13 +51,13 @@ def get_starting_rolling_date(date : dt.datetime):
 	sixth_day = b_dates[5]
 	return sixth_day
 
-def lot_size_and_unit(commodity : str):
+def lot_size_and_unit_liquidity(commodity : str):
 	info = pd.read_csv(PATH.fututes_info.value,sep ='\t')
 	comm_info = info[info['Commodity'] == commodity]
 	if comm_info.empty:
-		logger.error(f'{commodity}')
-		return 1,1
-	return comm_info['Lot size'].values[0],comm_info['Unit'].values[0]
+		logger.error(f'{commodity} Nan Lot Size Nan unit tick ')
+		return 1,1,1
+	return comm_info['Lot size'].values[0],comm_info['Unit'].values[0], comm_info['Liquidity'].values[0]
 
 def find_sequence(months : list):
 	squence = []
