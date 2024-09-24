@@ -5,8 +5,11 @@ import os
 
 database = load_database(PATH.database.value)
 
+
 for comm in database:
-	if comm in os.listdir(PATH.Output.value):
+	#if comm in os.listdir(PATH.Output.value):
+	#	continue
+	if comm !='LC':
 		continue
 	b = BackTest(comm)	
 	b.run()

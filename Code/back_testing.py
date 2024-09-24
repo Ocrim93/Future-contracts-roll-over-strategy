@@ -20,11 +20,13 @@ class BackTest():
 			if 	'MarketOut'  in list(df.columns) :
 				market_out_df = df[df['MarketOut'].isin([1,-1])]
 				if not market_out_df.empty:
-					market_out_map[future] = market_out_df['Date'].to_list()
+					market_out_map[future] = market_out_df[COLUMN.Date.value].to_list()
 		return 	market_out_map		
 
 	def __init__(self, commodity : str, 
-					   contract_number : int = 5):
+					   contract_number : int = 5,
+					   start_date_PnL : dt.datetime = dt.datetime(2010,1,1),
+					   end_date_PnL : dt.datetime = None):
 
 		self.commodity = commodity
 		self.database_path = utilities.get_database_path()
@@ -37,21 +39,23 @@ class BackTest():
 		self.expiration_date_df = pd.DataFrame()
 		self.data = pd.DataFrame()
 
+		self.start_date_PnL = start_date_PnL
+		self.end_date_PnL = end_date_PnL
 		self.performance_ratio_df = pd.DataFrame()
 
 	def compute_performance_ratio(self,distance : int,due_shift : int ):
-		pnl = self.PnL['PNL']
-		cum_pnl = self.PnL['cum_PNL']  
+		pnl = self.PnL[COLUMN.PnL.value]
+		cum_pnl = self.PnL[COLUMN.Cuml_PnL.value]  
 		std = pnl.std()
 
 		annualized_std = std*np.sqrt(PARAMETER.TRADING_DAYS.value)
 		annualized_cum_pnl = (cum_pnl.iloc[-1] - cum_pnl.iloc[0])*PARAMETER.TRADING_DAYS.value/cum_pnl.shape[0]
 		performance_ratio = annualized_cum_pnl/annualized_std
-		logger.info(f'{self.commodity} {COLUMN.Cuml_PnL.value} : {annualized_cum_pnl} {COLUMN.STD_annualized.value} : {annualized_std} {COLUMN.Performance_Ratio.value} : {performance_ratio}')
+		logger.info(f'{self.commodity} {COLUMN.Cuml_PnL_annualized.value} : {annualized_cum_pnl} {COLUMN.STD_annualized.value} : {annualized_std} {COLUMN.Performance_Ratio.value} : {performance_ratio}')
 		performance_ratio_df = pd.DataFrame(data = { COLUMN.Distance.value : [distance],
 													 COLUMN.Due_Shift.value : [due_shift],
 													 COLUMN.STD_annualized.value: [annualized_std],
-													 COLUMN.Cuml_PnL.value : [annualized_cum_pnl],
+													 COLUMN.Cuml_PnL_annualized.value : [annualized_cum_pnl],
 													 COLUMN.Performance_Ratio.value : [performance_ratio] })
 
 		self.performance_ratio = pd.concat([self.performance_ratio_df,performance_ratio_df])
@@ -84,14 +88,13 @@ class BackTest():
 		
 		for future,df in database.items():
 			futures.append(future)
-			real_exp_dates.append(df['Date'].iloc[-1])
+			real_exp_dates.append(df[COLUMN.Date.value].iloc[-1])
 		
 		expiration_date_df = pd.DataFrame({COLUMN.Due.value : real_exp_dates , COLUMN.Futures.value : futures} )
 		expiration_date_df[COLUMN.Month_Symbol.value] = expiration_date_df[COLUMN.Futures.value].apply(lambda x : x[2])
 		expiration_date_df.sort_values(COLUMN.Due.value,ascending = True,ignore_index = True,inplace = True)
 		expiration_date_df.to_csv(f'{self.output_path}/{self.commodity}_future_list.csv')
-
-		self.expiration_date_df = expiration_date_df
+		self.expiration_date_df = expiration_date_df[expiration_date_df[COLUMN.Due.value] >= self.start_date_PnL]
 
 	def futures_pairing(self,distance : int, due_shift : int):
 		expiration_date_df = self.expiration_date_df
@@ -116,51 +119,51 @@ class BackTest():
 	
 	def merging_futures_data(self,database : pd.DataFrame, column : str ):
 
-		data = pd.DataFrame({'Date' : []})
+		data = pd.DataFrame({COLUMN.Date.value : []})
 		for future,df in database.items():
-			df = df[['Date','Price']]
+			df = df[[COLUMN.Date.value,COLUMN.Price.value]]
 			df = df.rename(columns = { column : future })
-			data = data.merge(df, on = 'Date', how = 'outer')
-		if data['Date'].shape[0] != data['Date'].drop_duplicates().shape[0]:
+			data = data.merge(df, on = COLUMN.Date.value, how = 'outer')
+		if data[COLUMN.Date.value].shape[0] != data[COLUMN.Date.value].drop_duplicates().shape[0]:
 			print('WARNING duplicate dates')
-		end_date = list(data['Date'])[-1]
-		start_date = list(data['Date'])[0]
+		end_date = list(data[COLUMN.Date.value])[-1] if self.end_date_PnL == None else self.end_date_PnL 
+		start_date = self.start_date_PnL
 		date_range = pd.date_range(start=start_date, end=end_date, freq = 'B')
-		date_range_df = pd.DataFrame(data = { 'Date' : date_range})
-		dataset = date_range_df.merge(data, on = 'Date', how ='left')
-		dataset.sort_values(by = 'Date', inplace = True, ignore_index= True, ascending = True)	
+		date_range_df = pd.DataFrame(data = { COLUMN.Date.value : date_range})
+		dataset = date_range_df.merge(data, on = COLUMN.Date.value, how ='left')
+		dataset.sort_values(by = COLUMN.Date.value, inplace = True, ignore_index= True, ascending = True)	
 		return dataset
-	
-	
-	def compute_PnL_per_future(self,long_short_map, rolling_over_df ):
+
+
+	def compute_PnL_per_future(self, long_short_map, rolling_over_df ):
 		dfs = []
 		
 		for future in long_short_map:
 			future_df = pd.DataFrame(long_short_map[future])
-			future_df = future_df.merge(rolling_over_df,how = 'left', on = 'Date')
-			if future_df[future_df['Price'].isna()].shape[0] == len(future_df):
-				future_df['Price'] = np.full(len(future_df), np.nan)
-			future_df.loc[pd.isnull(future_df['Price']),'Price'] =  np.nan
-			future_df['Price'] = future_df['Price'].astype('float')
-			for position in ['long','short']:
-				mult = 1 if position == 'long' else -1 
-				position_df =   future_df[ (future_df['long_short'] == position)]
-				quant_adj = position_df['Quantity'].shift(1)
+			future_df = future_df.merge(rolling_over_df, how = 'left', on = COLUMN.Date.value)
+			if future_df[future_df[COLUMN.Price.value].isna()].shape[0] == len(future_df):
+				future_df[COLUMN.Price.value] = np.full(len(future_df), np.nan)
+			future_df.loc[pd.isnull(future_df[COLUMN.Price.value]),COLUMN.Price.value] =  np.nan
+			future_df[COLUMN.Price.value] = future_df[COLUMN.Price.value].astype('float')
+			for position in [PARAMETER.Long.value,PARAMETER.Short.value]:
+				mult = 1 if position == PARAMETER.Long.value else -1 
+				position_df =   future_df[ (future_df[COLUMN.Long_Short.value] == position)]
+				quant_adj = position_df[COLUMN.Contract_Quantity.value].shift(1)
 				quant_adj = quant_adj.fillna(0)
-				price = future_df.loc[ (future_df['long_short'] == position),'Price'].ffill()
-				if not future_df['long_short'].isin([position]).empty:
-					future_df.loc[ (future_df['long_short'] == position),'Pnl'] = mult*(price - price.shift(1))*quant_adj
+				price = future_df.loc[ (future_df[COLUMN.Long_Short.value] == position),COLUMN.Price.value].ffill()
+				if not future_df[COLUMN.Long_Short.value].isin([position]).empty:
+					future_df.loc[ (future_df[COLUMN.Long_Short.value] == position),COLUMN.PnL.value] = mult*(price - price.shift(1))*quant_adj
 					# to avoid warning to setting up column previously float64 and then object due to the presence of NaN or NaT
-					future_df = future_df.astype({'Pnl' : 'object'})
+					future_df = future_df.astype({COLUMN.PnL.value : 'object'})
 
-			#future_df['cum_PnL'] = future_df['Pnl'].cumsum()
+			#future_df[COLUMN.Cuml_PnL.value] = future_df[COLUMN.PnL.value].cumsum()
 			utilities.save_data_per_future(self.configuration_path,future_df,future)
-			future_df = future_df.rename(columns = {'Pnl' : future})
-			future_df = future_df[['Date', future]]
+			future_df = future_df.rename(columns = {COLUMN.PnL.value : future})
+			future_df = future_df[[COLUMN.Date.value, future]]
 			# when we short and long the same futures at the same time 
 			# we find tow rows with the same date but 2 PnLs: one short and one long 
 			# we need to group by 
-			future_df= future_df.groupby('Date').sum()
+			future_df= future_df.groupby(COLUMN.Date.value).sum()
 			future_df.reset_index(inplace=True)
 			dfs.append(future_df)
 		return dfs
@@ -170,15 +173,15 @@ class BackTest():
 		dfs = self.compute_PnL_per_future(long_short_map,rolling_over_df)
 		if len(dfs) > 0 :
 			#merge all DataFrames into one
-			final_df = reduce(lambda  left,right: pd.merge(left,right,on=['Date'], how='outer'), dfs)
-			final_df.sort_values(by = 'Date', inplace = True, ignore_index= True, ascending = True)
+			final_df = reduce(lambda  left,right: pd.merge(left,right,on=[COLUMN.Date.value], how='outer'), dfs)
+			final_df.sort_values(by = COLUMN.Date.value, inplace = True, ignore_index= True, ascending = True)
 
-			final_df['PnL'] = final_df[[col  for col in final_df.columns if col != 'Date']].sum(axis=1)
-			final_df['PNL'] = final_df['PnL']*self.contract_value
-			final_df['cum_PNL'] = final_df['PNL'].cumsum()
+			final_df[COLUMN.PnL.value] = final_df[[col  for col in final_df.columns if col != COLUMN.Date.value]].sum(axis=1)
+			final_df[COLUMN.PnL.value] = final_df[COLUMN.PnL.value]*self.contract_value
+			final_df[COLUMN.Cuml_PnL.value] = final_df[COLUMN.PnL.value].cumsum()
 			
 			# merging with rolling over period
-			final_df = final_df.merge(rolling_over_df, how = 'left', on = 'Date')
+			final_df = final_df.merge(rolling_over_df, how = 'left', on = COLUMN.Date.value)
 			logger.info('Saving PnL outcome')
 			final_df.to_csv(f'{self.configuration_path}/{self.commodity}_PnL.csv')
 			self.PnL = final_df
@@ -187,17 +190,17 @@ class BackTest():
 	def handle_missing_price(self,long_short_map,futures,prices,counting_rolling,previous_future_flag = False):
 		for _, future in futures.items():
 			if pd.isna(prices[future]) and counting_rolling > 1 :
-				long_short_map[future]['Quantity'].append(long_short_map[future]['Quantity'][-1])
+				long_short_map[future][COLUMN.Contract_Quantity.value].append(long_short_map[future][COLUMN.Contract_Quantity.value][-1])
 			elif pd.isna(prices[future]):
 				if  previous_future_flag:
-					long_short_map[future]['Quantity'].append(5)
+					long_short_map[future][COLUMN.Contract_Quantity.value].append(5)
 				else:
-					long_short_map[future]['Quantity'].append(0)
+					long_short_map[future][COLUMN.Contract_Quantity.value].append(0)
 			else:
 				if  previous_future_flag:
-					long_short_map[future]['Quantity'].append(5 - counting_rolling)
+					long_short_map[future][COLUMN.Contract_Quantity.value].append(5 - counting_rolling)
 				else:
-					long_short_map[future]['Quantity'].append(counting_rolling)
+					long_short_map[future][COLUMN.Contract_Quantity.value].append(counting_rolling)
 
 		return long_short_map
 						
@@ -205,9 +208,9 @@ class BackTest():
 	def rolling_period(self,long_short_map,futures,previous_futures,prices,counting_rolling):
 		for future_map in [futures,previous_futures]:
 			for position, future in future_map.items():
-				long_short_map[future]['Date'].append(prices.Date)
-				long_short_map[future]['Price'].append(prices[future])
-				long_short_map[future]['long_short'].append(position)
+				long_short_map[future][COLUMN.Date.value].append(prices.Date)
+				long_short_map[future][COLUMN.Price.value].append(prices[future])
+				long_short_map[future][COLUMN.Long_Short.value].append(position)
 		
 		long_short_map = self.handle_missing_price(long_short_map,futures,prices,counting_rolling)
 		long_short_map = self.handle_missing_price(long_short_map,previous_futures,prices,counting_rolling,True)
@@ -216,10 +219,10 @@ class BackTest():
 	
 	def base_period(self,long_short_map,futures,prices ):
 		for position, future in futures.items():
-			long_short_map[future]['Date'].append(prices.Date)
-			long_short_map[future]['Price'].append(prices[future])
-			long_short_map[future]['Quantity'].append(5)
-			long_short_map[future]['long_short'].append(position)
+			long_short_map[future][COLUMN.Date.value].append(prices.Date)
+			long_short_map[future][COLUMN.Price.value].append(prices[future])
+			long_short_map[future][COLUMN.Contract_Quantity.value].append(5)
+			long_short_map[future][COLUMN.Long_Short.value].append(position)
 		return long_short_map
 
 	def single_run(self, distance, due_shift):
@@ -233,7 +236,7 @@ class BackTest():
 		long_short_map = defaultdict(lambda : defaultdict(list))
 		rolling_over = []
 
-		starting_date = dt.datetime(1789,1,1)
+		starting_date = self.start_date_PnL #dt.datetime(1789,1,1)
 		is_rolling = False
 		counting_rolling = 0
 		previous_futures = {}
@@ -241,29 +244,29 @@ class BackTest():
 		#market_out_flag = False
 		#---------------- settings --------------------
 		logger.info('Starting back test')
-		for exp_row in expiration_date_df.itertuples():
-			futures = {'long' : exp_row.Pair, 'short' : exp_row.Future}
+		for _,exp_row in expiration_date_df.iterrows():
+			futures = {PARAMETER.Long.value : exp_row[COLUMN.Pair.value], PARAMETER.Short.value : exp_row[COLUMN.Futures.value]}
 			starting_rolling = utilities.get_starting_rolling_date(exp_row.Due)
-			for idx,row in data[data['Date'] >= starting_date ].iterrows():
-				if long_short_map == {} and (pd.isna(row[futures['short']]) or pd.isna(row[futures['long']]) ) :
-					logger.info(f'the first pairing {futures["short"]}-{futures["long"]} does not have available prices in common date {row.Date}')
+			for idx,row in data[data[COLUMN.Date.value] >= starting_date ].iterrows():
+				if long_short_map == {} and (pd.isna(row[futures[PARAMETER.Short.value]]) or pd.isna(row[futures[PARAMETER.Long.value]]) ) :
+					logger.info(f'the first pairing {futures[PARAMETER.Short.value]}-{futures[PARAMETER.Long.value]} does not have available prices in common date {row[COLUMN.Date.value]}')
 					continue
-				if row.Date > starting_rolling :
-					logger.info(f'current date {row.Date} > starting rolling {starting_rolling} -> Skip pairing')
+				if row[COLUMN.Date.value] > starting_rolling :
+					logger.info(f'current date {row[COLUMN.Date.value]} > starting rolling {starting_rolling} -> Skip pairing')
 					'''it means that the current time is later than starting rolling so
 					 it is reasonable to skip this pairing'''
-					starting_date = row.Date
+					starting_date = row[COLUMN.Date.value]
 					break
-				if (row.Date == starting_rolling):
+				if (row[COLUMN.Date.value] == starting_rolling):
 					is_rolling = True
-					previous_futures = {'long' : futures['long'], 'short' : futures['short']}
-					starting_date = row.Date
+					previous_futures = {PARAMETER.Long.value : futures[PARAMETER.Long.value], PARAMETER.Short.value : futures[PARAMETER.Short.value]}
+					starting_date = row[COLUMN.Date.value]
 					break
 
 				#------------------- START ROLLING PERIOD ---------------------------------------------------------	
 				if is_rolling :
 					counting_rolling += 1
-					rolling_over.append((is_rolling, row.Date,counting_rolling))
+					rolling_over.append((is_rolling, row[COLUMN.Date.value],counting_rolling))
 
 					long_short_map = self.rolling_period(long_short_map,
 													     futures,
@@ -286,16 +289,16 @@ class BackTest():
 			logger.warning('Exit from loop not in pre rolling period')
 		
 		logger.info('Closing ALL positions')
-		closing_position = data[data['Date'] == row.Date ].iloc[0]
+		closing_position = data[data[COLUMN.Date.value] == row[COLUMN.Date.value] ].iloc[0]
 		long_short_map = self.base_period(long_short_map,previous_futures,closing_position)
-		rolling_over_df = pd.DataFrame(rolling_over,columns = ['IS_ROLLING','Date', 'Day'])
-		#rolling_over_df = rolling_over_df.astype({'IS_ROLLING': bool})
+		rolling_over_df = pd.DataFrame(rolling_over,columns = [COLUMN.IS_ROLLING.value,COLUMN.Date.value, COLUMN.Rolling_Day.value])
+		#rolling_over_df = rolling_over_df.astype({COLUMN.IS_ROLLING.value: bool})
 		self.compute_PnL(long_short_map,rolling_over_df)
 		self.compute_performance_ratio(distance,due_shift)
 		self.save_plot(distance,due_shift)
 
 	def save_plot(self, distance : int, due_shift : int):
-		fig = plotting_lib.create_figure(self.PnL,f'{self.commodity}_{distance}_{due_shift}_PnL','Date','cum_PNL',self.commodity)
+		fig = plotting_lib.create_figure(self.PnL,f'{self.commodity}_{distance}_{due_shift}_PnL',COLUMN.Date.value,COLUMN.Cuml_PnL.value,self.commodity)
 		self.figure = fig
 		logger.info(f'Save Image plot {self.commodity}')
 		plotting_lib.plot(fig,self.configuration_path,SAVE = True)
@@ -307,7 +310,7 @@ class BackTest():
 		logger.info('Loading database')
 		database = utilities.load_database(self.database_path,self.commodity)
 		self.available_future(database)
-		self.data = self.merging_futures_data(database,'Price')
+		self.data = self.merging_futures_data(database,COLUMN.Price.value)
 		self.market_out_map = BackTest.get_market_out_dates(self.database_path,self.commodity)
 
 		for conf in self.configuration :
@@ -318,7 +321,7 @@ class BackTest():
 				self.single_run(conf,due_shift)
 		logger.info('Saving sharp ratios')
 		self.performance_ratio_df.reset_index(drop=True,inplace= True)
-		self.performance_ratio_df.sort_values(by = 'Performance_Ratio', inplace = True, ignore_index= True, ascending = False)
+		self.performance_ratio_df.sort_values(by = COLUMN.Performance_Ratio.value, inplace = True, ignore_index= True, ascending = False)
 		self.performance_ratio_df.to_csv(f'{self.output_path}/{self.commodity}_sharp_ratio.csv')
 
 
