@@ -26,7 +26,8 @@ class BackTest():
 	def __init__(self, commodity : str, 
 					   contract_number : int = 5,
 					   start_date_PnL : dt.datetime = dt.datetime(2010,1,1),
-					   end_date_PnL : dt.datetime = None):
+					   end_date_PnL : dt.datetime = None,
+					   specific_run : list = None):
 
 		self.commodity = commodity
 		self.database_path = utilities.get_database_path()
@@ -43,6 +44,8 @@ class BackTest():
 		self.end_date_PnL = end_date_PnL
 		self.performance_ratio_df = pd.DataFrame()
 
+		self.specific_run = specific_run
+
 	def compute_performance_ratio(self,distance : int,due_shift : int ):
 		pnl = self.PnL[COLUMN.PnL.value]
 		cum_pnl = self.PnL[COLUMN.Cuml_PnL.value]  
@@ -51,16 +54,22 @@ class BackTest():
 		annualized_std = std*np.sqrt(PARAMETER.TRADING_DAYS.value)
 		annualized_cum_pnl = (cum_pnl.iloc[-1] - cum_pnl.iloc[0])*PARAMETER.TRADING_DAYS.value/cum_pnl.shape[0]
 		performance_ratio = annualized_cum_pnl/annualized_std
-		logger.info(f'{self.commodity} {COLUMN.Cuml_PnL_annualized.value} : {annualized_cum_pnl} {COLUMN.STD_annualized.value} : {annualized_std} {COLUMN.Performance_Ratio.value} : {performance_ratio}')
+		logger.info(f'{self.commodity} {COLUMN.Cuml_PnL_annualized.value} : {annualized_cum_pnl:.2f}, {COLUMN.STD_annualized.value} : {annualized_std:.2f}, {COLUMN.Performance_Ratio.value} : {performance_ratio:.2f}')
 		performance_ratio_df = pd.DataFrame(data = { COLUMN.Distance.value : [distance],
 													 COLUMN.Due_Shift.value : [due_shift],
 													 COLUMN.STD_annualized.value: [annualized_std],
 													 COLUMN.Cuml_PnL_annualized.value : [annualized_cum_pnl],
 													 COLUMN.Performance_Ratio.value : [performance_ratio] })
-
-		self.performance_ratio = pd.concat([self.performance_ratio_df,performance_ratio_df])
+		if not performance_ratio_df.empty:
+			self.performance_ratio_df = pd.concat([self.performance_ratio_df,performance_ratio_df])
 
 	def find_configuration(self):
+		'''
+			Compute the futures pairing with regard to 
+			different number of futures apart among long and short legs
+			i.e. G,J,M,Q -> 1: (G,J) (J,M)
+						  2: (G,M) (J,Q) ... 
+		'''
 		configuration  = defaultdict(lambda  : defaultdict() )
 		database = utilities.load_database(self.database_path,self.commodity)
 
@@ -96,7 +105,7 @@ class BackTest():
 		expiration_date_df.to_csv(f'{self.output_path}/{self.commodity}_future_list.csv')
 		self.expiration_date_df = expiration_date_df[expiration_date_df[COLUMN.Due.value] >= self.start_date_PnL]
 
-	def futures_pairing(self,distance : int, due_shift : int):
+	def futures_pairing(self, distance : int, due_shift : int):
 		expiration_date_df = self.expiration_date_df
 		futures = expiration_date_df[COLUMN.Futures.value].to_list()
 		configuration = self.configuration[distance]
@@ -171,6 +180,7 @@ class BackTest():
 	def compute_PnL(self,long_short_map,rolling_over_df):
 
 		dfs = self.compute_PnL_per_future(long_short_map,rolling_over_df)
+		print(long_short_map)
 		if len(dfs) > 0 :
 			#merge all DataFrames into one
 			final_df = reduce(lambda  left,right: pd.merge(left,right,on=[COLUMN.Date.value], how='outer'), dfs)
@@ -185,7 +195,8 @@ class BackTest():
 			logger.info('Saving PnL outcome')
 			final_df.to_csv(f'{self.configuration_path}/{self.commodity}_PnL.csv')
 			self.PnL = final_df
-		logger.warning(f'{self.commodity} Zero data to compute the PnL ')
+		else:
+			logger.warning(f'{self.commodity} Zero data to compute the PnL ')
 
 	def handle_missing_price(self,long_short_map,futures,prices,counting_rolling,previous_future_flag = False):
 		for _, future in futures.items():
@@ -226,6 +237,7 @@ class BackTest():
 		return long_short_map
 
 	def single_run(self, distance, due_shift):
+		self.configuration_path = utilities.get_output_path(self.commodity,distance,due_shift)
 		logger.info(f'For the commodity {self.commodity} discovering future pairing ') 
 		expiration_date_df = self.futures_pairing(distance, due_shift)
 		if expiration_date_df.empty:
@@ -286,7 +298,7 @@ class BackTest():
 						counting_rolling = 0
 				#------------------- BASE PERIOD ----------------------------------------------------------------	
 		if not is_rolling:
-			logger.warning('Exit from loop not in pre rolling period')
+			logger.warning('Exit from loop not in pre-rolling period')
 		
 		logger.info('Closing ALL positions')
 		closing_position = data[data[COLUMN.Date.value] == row[COLUMN.Date.value] ].iloc[0]
@@ -312,17 +324,27 @@ class BackTest():
 		self.available_future(database)
 		self.data = self.merging_futures_data(database,COLUMN.Price.value)
 		self.market_out_map = BackTest.get_market_out_dates(self.database_path,self.commodity)
-
-		for conf in self.configuration :
-			for due_shift in range(len(self.configuration.keys())):
-				self.configuration_path = utilities.get_output_path(self.commodity,conf,due_shift)
-				logger.info(f'Starting configuration {self.configuration[conf]} with due shift {due_shift}' )
-				#utilities.log_inizialization(self.configuration_path)
-				self.single_run(conf,due_shift)
-		logger.info('Saving sharp ratios')
-		self.performance_ratio_df.reset_index(drop=True,inplace= True)
-		self.performance_ratio_df.sort_values(by = COLUMN.Performance_Ratio.value, inplace = True, ignore_index= True, ascending = False)
-		self.performance_ratio_df.to_csv(f'{self.output_path}/{self.commodity}_sharp_ratio.csv')
+		# in case specific run is enabled 
+		if self.specific_run != None :
+			logger.info(f'Starting configuration distance {self.specific_run[0]} with due shift {self.specific_run[1]}: {self.configuration[self.specific_run[0]]}' )	
+			self.single_run(self.specific_run[0],self.specific_run[1])
+			self.single_run(6,3)
+		else:
+			for conf in self.configuration :
+				for due_shift in range(len(self.configuration.keys())):
+					logger.info(f'Starting configuration distance {conf} with due shift {due_shift} : {self.configuration[conf]}' )
+					#utilities.log_inizialization(self.configuration_path)
+					#self.single_run(conf,due_shift)
+					self.single_run(6,3)
+					break
+				break
+		if self.performance_ratio_df.empty:
+			logger.info('NOT Saving sharp ratios, empty performance ratio dataset')
+		else:
+			logger.info('Saving sharp ratios')
+			self.performance_ratio_df.reset_index(drop=True,inplace= True)
+			self.performance_ratio_df.sort_values(by = COLUMN.Performance_Ratio.value, inplace = True, ignore_index= True, ascending = False)
+			self.performance_ratio_df.to_csv(f'{self.output_path}/{self.commodity}_sharp_ratio.csv')
 
 
 
