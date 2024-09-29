@@ -343,7 +343,7 @@ class BackTest():
 		# in case specific run is enabled 
 		if self.specific_run != None :
 			logger.info(f'Starting configuration distance {self.specific_run[0]} with due shift {self.specific_run[1]}: {self.configuration[self.specific_run[0]]}' )	
-			self.single_run(6,3)
+			self.single_run(self.specific_run[0],self.specific_run[1])
 		else:
 			for conf in self.configuration :
 				for due_shift in range(len(self.configuration.keys())):
