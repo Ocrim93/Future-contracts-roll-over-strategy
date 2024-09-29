@@ -6,6 +6,13 @@ class PATH(Enum):
 	database = f'{Input}/new_database'
 	fututes_info = f'{Input}/futures_info.csv'
 
+class FILENAME(Enum):
+	Available_Futures = 'Available_Futures'
+	PnL = 'PnL'
+	Sharp_Ratio  = 'sharp_ratio'
+	Futures_Pairing = 'futures_pairing'
+
+
 class GRAPH(Enum):
 	font_family="Courier New"
 	font_color="blue"
