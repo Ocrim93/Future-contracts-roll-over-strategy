@@ -80,4 +80,13 @@ def get_output_path(commodity :str, pairing_distance : int  = None, due_shift : 
 		path = create_folder(output_folder = f'{commodity}/{pairing_distance}/{due_shift}')
 	return path
 
+def save_csv(data : pd.DataFrame ,path : str, filename : str, commodity : str):
+	io_name = f'{commodity}_{filename}'
+	if data.empty:
+		logger.warning(f'File : {io_name} Not Saved, empty dataframe')
+	else:
+		data.to_csv(f'{path}/{io_name}.csv')
+		logger.info(f'File : {io_name} Saved')
+
+
 
