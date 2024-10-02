@@ -31,6 +31,8 @@ class COLUMN(Enum):
 	Pair = 'Futures Pair'
 	Price = 'Price'
 	Date = 'Date'
+	Open_Interest = 'Open Interest'
+	Volume = 'Volume'
 	Due = 'Due'
 	IS_ROLLING = 'IS_ROLLING'
 	Rolling_Day = 'Rolling_Day'

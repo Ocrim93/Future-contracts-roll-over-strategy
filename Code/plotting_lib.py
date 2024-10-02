@@ -35,7 +35,7 @@ def create_figure(	data,
 				    title,
 				    x_axis,
 				    y_axis,
-					y_axis_name ,):
+					y_axis_name):
 	
 	figure = Figure(Scatter(x=data[x_axis], y=data[y_axis],mode='lines', name = y_axis_name, line = {'color' : generator_colour()}))
 	figure = setting_layout(figure,title)

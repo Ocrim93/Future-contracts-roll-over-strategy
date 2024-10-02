@@ -8,9 +8,9 @@ database = load_database(PATH.database.value)
 for comm in database:
 	#if comm in os.listdir(PATH.Output.value):
 	#	continue
-	if comm !='LC':
+	if comm !='CL':
 		continue
-	b = BackTest(comm, specific_run = [6,3]	)	
+	b = BackTest(comm)		
 	b.run()
 	
 	
