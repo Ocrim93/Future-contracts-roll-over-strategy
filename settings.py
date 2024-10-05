@@ -5,6 +5,7 @@ class PATH(Enum):
 	Output = './Output'
 	database = f'{Input}/new_database'
 	fututes_info = f'{Input}/futures_info.csv'
+	data_folder = 'data'
 
 class FILENAME(Enum):
 	Available_Futures = 'Available_Futures'

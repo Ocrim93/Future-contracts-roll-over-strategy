@@ -6,8 +6,8 @@ import datetime as dt
 from .Bloomberg_formatting import get_expiration_date_from_futures
 from . import plotting_lib
 from collections import defaultdict 
-from functools import reduce	
-from settings import PARAMETER, COLUMN, FILENAME
+from settings import PATH, PARAMETER, COLUMN, FILENAME
+from functools import reduce
 
 class BackTest():
 
@@ -150,50 +150,60 @@ class BackTest():
 		dataset.sort_values(by = COLUMN.Date.value, inplace = True, ignore_index= True, ascending = True)
 		return dataset
 
+	def adding_volume_open_interest(self, data : pd.DataFrame, futures : str):
+		df = data.copy()
+		stream_columns = [COLUMN.Date.value, futures]
+		#Adding volume 
+		df = df.merge( utilities.stream_and_rename(self.volume_data,stream_columns, {futures : COLUMN.Volume.value}) ,how = 'left',on = COLUMN.Date.value)
+		#adding Open Interest
+		df = df.merge( utilities.stream_and_rename(self.volume_data,stream_columns, {futures : COLUMN.Open_Interest.value}) ,how = 'left',on = COLUMN.Date.value)
+
+		return df
 
 	def compute_PnL_per_futures(self, long_short_map, rolling_over_df ):
-		dfs = []
+		PnL_dfs = []
+		volume_dfs = []
+		open_interest_dfs = []
 		
-		for future in long_short_map:
-			future_df = pd.DataFrame(long_short_map[future])
-			future_df = future_df.merge(rolling_over_df, how = 'left', on = COLUMN.Date.value)
-			if future_df[future_df[COLUMN.Price.value].isna()].shape[0] == len(future_df):
-				future_df[COLUMN.Price.value] = np.full(len(future_df), np.nan)
-			future_df.loc[pd.isnull(future_df[COLUMN.Price.value]),COLUMN.Price.value] =  np.nan
-			future_df[COLUMN.Price.value] = future_df[COLUMN.Price.value].astype('float')
+		for futures in long_short_map:
+			futures_df = pd.DataFrame(long_short_map[futures])
+			futures_df = futures_df.merge(rolling_over_df, how = 'left', on = COLUMN.Date.value)
+			if futures_df[futures_df[COLUMN.Price.value].isna()].shape[0] == len(futures_df):
+				futures_df[COLUMN.Price.value] = np.full(len(futures_df), np.nan)
+			futures_df.loc[pd.isnull(futures_df[COLUMN.Price.value]),COLUMN.Price.value] =  np.nan
+			futures_df[COLUMN.Price.value] = futures_df[COLUMN.Price.value].astype('float')
 			for position in [PARAMETER.Long.value,PARAMETER.Short.value]:
 				mult = 1 if position == PARAMETER.Long.value else -1 
-				position_df =   future_df[ (future_df[COLUMN.Long_Short.value] == position)]
+				position_df =   futures_df[ (futures_df[COLUMN.Long_Short.value] == position)]
 				quant_adj = position_df[COLUMN.Contract_Quantity.value].shift(1)
 				quant_adj = quant_adj.fillna(0)
-				price = future_df.loc[ (future_df[COLUMN.Long_Short.value] == position),COLUMN.Price.value].ffill()
-				if not future_df[COLUMN.Long_Short.value].isin([position]).empty:
-					future_df.loc[ (future_df[COLUMN.Long_Short.value] == position),COLUMN.PnL.value] = mult*(price - price.shift(1))*quant_adj
+				price = futures_df.loc[ (futures_df[COLUMN.Long_Short.value] == position),COLUMN.Price.value].ffill()
+				if not futures_df[COLUMN.Long_Short.value].isin([position]).empty:
+					futures_df.loc[ (futures_df[COLUMN.Long_Short.value] == position),COLUMN.PnL.value] = mult*(price - price.shift(1))*quant_adj
 					# to avoid warning to setting up column previously float64 and then object due to the presence of NaN or NaT
-					future_df = future_df.astype({COLUMN.PnL.value : 'object'})
+					futures_df = futures_df.astype({COLUMN.PnL.value : 'object'})
 
-			#future_df[COLUMN.Cuml_PnL.value] = future_df[COLUMN.PnL.value].cumsum()
-			utilities.save_data_per_future(self.configuration_path,future_df,future)
-			future_df = future_df.rename(columns = {COLUMN.PnL.value : future})
-			future_df = future_df[[COLUMN.Date.value, future]]
-			# when we short and long the same futures at the same time 
-			# we find tow rows with the same date but 2 PnLs: one short and one long 
-			# we need to group by 
-			future_df= future_df.groupby(COLUMN.Date.value).sum()
-			future_df.reset_index(inplace=True)
-			dfs.append(future_df)
-		return dfs
+			#'Adding Open Interest and Volume to {futures}'
+			futures_df = self.adding_volume_open_interest(futures_df,futures)
+			utilities.save_csv(futures_df, self.data_path,futures)
+			
+			PnL_dfs.append(utilities.formatting_futures_data_before_aggregation(futures_df, futures, COLUMN.PnL.value))
+			volume_dfs.append(utilities.formatting_futures_data_before_aggregation(futures_df, futures, COLUMN.Volume.value))
+			open_interest_dfs.append(utilities.formatting_futures_data_before_aggregation(futures_df, futures, COLUMN.Open_Interest.value))
+
+		return PnL_dfs,volume_dfs,open_interest_dfs
 	
 	def compute_PnL(self,long_short_map,rolling_over_df):
 
 		result = False
-		dfs = self.compute_PnL_per_futures(long_short_map,rolling_over_df)
-		if len(dfs) > 0 :
+		PnL_dfs,volume_dfs,open_interest_dfs = self.compute_PnL_per_futures(long_short_map,rolling_over_df)
+		if len(PnL_dfs) > 0 :
 			#merge all DataFrames into one
-			final_df = reduce(lambda  left,right: pd.merge(left,right,on=[COLUMN.Date.value], how='outer'), dfs)
-			final_df.sort_values(by = COLUMN.Date.value, inplace = True, ignore_index= True, ascending = True)
-
-			final_df[COLUMN.PnL.value] = final_df[[col  for col in final_df.columns if col != COLUMN.Date.value]].sum(axis=1)
+			pnl_df = utilities.merging_all_dataframes(PnL_dfs, COLUMN.PnL.value)
+			volume_df = utilities.merging_all_dataframes(volume_dfs, COLUMN.Volume.value)
+			open_interest_df = utilities.merging_all_dataframes(open_interest_dfs, COLUMN.Open_Interest.value)
+			
+			final_df = reduce(lambda  left,right: pd.merge(left,right,on=[COLUMN.Date.value], how='outer'), [pnl_df,volume_df,open_interest_df])
 			final_df[COLUMN.PnL.value] = final_df[COLUMN.PnL.value]*self.contract_value
 			final_df[COLUMN.Cuml_PnL.value] = final_df[COLUMN.PnL.value].cumsum()
 			
@@ -206,6 +216,8 @@ class BackTest():
 		else:
 			logger.warning(f'{self.commodity} Zero data to compute the PnL ')
 		return result
+
+
 	def handle_missing_price(self,long_short_map,futures,prices,counting_rolling,previous_future_flag = False):
 		for _, future in futures.items():
 			if pd.isna(prices[future]) and counting_rolling > 1 :
@@ -232,7 +244,7 @@ class BackTest():
 				long_short_map[future][COLUMN.Long_Short.value].append(position)
 		
 		long_short_map = self.handle_missing_price(long_short_map,futures,prices,counting_rolling)
-		long_short_map = self.handle_missing_price(long_short_map,previous_futures,prices,counting_rolling,True)
+		long_short_map = self.handle_missing_price(long_short_map,previous_futures,prices,counting_rolling,previous_future_flag = True)
 		
 		return long_short_map
 	
@@ -246,7 +258,7 @@ class BackTest():
 
 	def single_run(self, distance, due_shift):
 		logger.info(f'Starting configuration distance {distance} with due shift {due_shift}: {self.configuration[distance]}' )	
-		self.configuration_path = utilities.get_output_path(self.commodity,distance,due_shift)
+		self.configuration_path, self.data_path = utilities.get_output_path(self.commodity,PATH.data_folder.value,distance,due_shift)
 		logger.info(f'For the commodity {self.commodity} discovering future pairing ') 
 		expiration_date_df = self.futures_pairing(distance, due_shift)
 		if expiration_date_df.empty:
@@ -334,13 +346,15 @@ class BackTest():
 		logger.info('Loading database')
 		database = utilities.load_database(self.database_path,self.commodity)
 		self.available_futures(database)
+		
 		self.price_data = self.merging_futures_data(database,COLUMN.Price.value)
 		self.volume_data = self.merging_futures_data(database,COLUMN.Volume.value)
 		self.openInt_data = self.merging_futures_data(database,COLUMN.Open_Interest.value)
 		self.market_out_map = BackTest.get_market_out_dates(self.database_path,self.commodity)
+		
 		# in case specific run is enabled 
 		if self.specific_run != None :
-			self.configuration_path = utilities.get_output_path(self.commodity,self.specific_run[0],self.specific_run[1])
+			self.configuration_path, self.data_path = utilities.get_output_path(self.commodity,PATH.data_folder.value,self.specific_run[0],self.specific_run[1])
 			utilities.log_inizialization(self.configuration_path)
 			self.single_run(self.specific_run[0],self.specific_run[1])
 		else:

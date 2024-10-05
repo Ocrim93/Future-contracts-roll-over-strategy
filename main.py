@@ -10,7 +10,7 @@ for comm in database:
 	#	continue
 	if comm !='CL':
 		continue
-	b = BackTest(comm)		
+	b = BackTest(comm, specific_run= [1,1])		
 	b.run()
 	
 	
