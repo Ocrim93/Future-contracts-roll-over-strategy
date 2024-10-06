@@ -1,0 +1,7 @@
+active:
+  - Open Interest
+  - Volume 
+  - Volatility
+
+Volatility:
+  window : 10 

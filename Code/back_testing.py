@@ -206,7 +206,7 @@ class BackTest():
 			final_df = reduce(lambda  left,right: pd.merge(left,right,on=[COLUMN.Date.value], how='outer'), [pnl_df,volume_df,open_interest_df])
 			final_df[COLUMN.PnL.value] = final_df[COLUMN.PnL.value]*self.contract_value
 			final_df[COLUMN.Cuml_PnL.value] = final_df[COLUMN.PnL.value].cumsum()
-			
+
 			# merging with rolling over period
 			final_df = final_df.merge(rolling_over_df, how = 'left', on = COLUMN.Date.value)
 			logger.info('Saving PnL outcome')

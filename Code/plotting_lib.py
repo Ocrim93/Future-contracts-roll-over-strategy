@@ -4,7 +4,7 @@ from settings import PATH,GRAPH
 import plotly.io as pio 
 import random
 from typing import Union
-
+import plotly.graph_objects as go
 import plotly.express as px
 
 colors = ['#1F77B4']
@@ -41,6 +41,19 @@ def create_figure(	data,
 	figure = setting_layout(figure,title)
 	
 	return figure	
+
+def create_multiple_axes_figure(data, 
+							    title,
+							    x_axis,
+							    y_axis,
+							    main_y_axis):
+	fig = go.Figure()
+	fig.add_trace(go.Scatter( x= data[x_axis], y = data[main_y_axis], name = main_y_axis,line = {'color' : generator_colour()} ))
+	fig.layout['yaxis'] = {'title' : main_y_axis} 
+	for i,y in enumerate(y_axis):
+		fig.add_trace(go.Scatter( x= data[x_axis], y = data[y], name = y ,yaxis=f'y{i+2}',line = {'color' : generator_colour()} ))
+		fig.layout[f'yaxis{i+2}'] = {'title' : y, 'anchor' : 'free', 'overlaying' : 'y', 'side' : 'right', 'position' :0.05*(i) } 
+	return fig
 
 def adding_horizontal_line(figure, value, name = 'avg'):
 	color = generator_colour() 
