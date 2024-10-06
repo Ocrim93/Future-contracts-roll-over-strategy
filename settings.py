@@ -5,6 +5,8 @@ class PATH(Enum):
 	Output = './Output'
 	database = f'{Input}/new_database'
 	fututes_info = f'{Input}/futures_info.csv'
+	data_folder = 'data'
+	Trading_settings = './Trading_settings.yml'
 
 class FILENAME(Enum):
 	Available_Futures = 'Available_Futures'
@@ -31,6 +33,8 @@ class COLUMN(Enum):
 	Pair = 'Futures Pair'
 	Price = 'Price'
 	Date = 'Date'
+	Open_Interest = 'Open Interest'
+	Volume = 'Volume'
 	Due = 'Due'
 	IS_ROLLING = 'IS_ROLLING'
 	Rolling_Day = 'Rolling_Day'
@@ -49,3 +53,5 @@ class COLUMN(Enum):
 	Cuml_PnL = 'Cuml_P&L'	
 	Cuml_PnL_annualized = 'Cumulative P&L annualized'
 	Performance_Ratio = 'Performance Ratio'
+
+	Volatility = 'Volatility'

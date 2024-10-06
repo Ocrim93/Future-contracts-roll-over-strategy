@@ -7,6 +7,9 @@ from settings import PATH
 from Code.Bloomberg_formatting import LIST_SYMBOL 
 from loguru import logger
 import datetime as dt
+import numpy as np
+from functools import reduce
+from settings import COLUMN
 
 
 def create_folder(path : str = PATH.Output.value, output_folder : str = None):
@@ -22,9 +25,57 @@ def create_folder(path : str = PATH.Output.value, output_folder : str = None):
 	
 	return  creation_path
 
+def retrieve_value(df : pd.DataFrame, field : str, condition : dict = {}, fallback_value : float = 0):
+	data = df.copy()[field]
+	value = fallback_value
+	if condition != {}:
+		for key, value in condition.items:
+			data = data[data[key] == value]
+	if not data.empty or data.notna():
+		#check to obtain only one values 
+		if len(data) != 1:
+			logger.error(f'Finding more than one value {field} for {condition}')
+		value = data.values[0]
+	return value
+
+def handling_missing_column(data : pd.DataFrame, columns : list):
+	for col in columns:
+		if col not in data.columns:
+			data[col] = np.full(len(data), np.nan)
+	return data
+
+def stream_and_rename(data : pd.DataFrame, stream_list : list, rename_map : dict ):
+	data = data.copy()
+	data = handling_missing_column(data, stream_list)
+	data = data[stream_list]
+	data = data.rename(columns = rename_map)
+	return data
+
+def formatting_futures_data_before_aggregation(data : pd.DataFrame, futures : str, column : str):
+	df = data.copy().rename(columns = {column : futures})
+	df = df[[COLUMN.Date.value, futures]]
+	if column == COLUMN.PnL.value:
+		'''
+		 when we short and long the same futures at the same time 
+		 we find two rows with the same date but 2 PnLs: one short and one long 
+		 we need to group by and sum them 
+		'''
+		df= df.groupby(COLUMN.Date.value).sum()
+	else:
+		df= df.groupby(COLUMN.Date.value).mean()
+	df.reset_index(inplace=True)
+	return df
+
+def merging_all_dataframes(dfs : list, column : str ):
+	df = reduce(lambda  left,right: pd.merge(left,right,on=[COLUMN.Date.value], how='outer'), dfs)
+	df.sort_values(by = COLUMN.Date.value, inplace = True, ignore_index= True, ascending = True)
+	df[column] = df[[col  for col in df.columns if col != COLUMN.Date.value]].sum(axis=1)
+	df = df.drop([col  for col in df.columns if col not in [column, COLUMN.Date.value]], axis =1 )
+	return df
+
 def log_inizialization(path :  str):
 	today = dt.datetime.now().strftime('%d%b%Y')
-	logger.add(f"{path}/log",enqueue=False, mode = 'x')
+	logger.add(f"{path}/log",enqueue=False, mode = 'w')
 
 def load_database(file_path : str, commodity : str = None):
 	pkl_file = open(file_path, 'rb')
@@ -66,27 +117,32 @@ def find_sequence(months : list):
 			squence.append(m)
 	return squence		
 
-def save_data_per_future(path : str , dataset : pd.DataFrame, future :  str):
-	folder_path = create_folder(path = f'{path}/data')
-	dataset.to_csv(f'{folder_path}/{future}.csv', sep = '\t')
 
 def get_database_path():
 	return PATH.database.value
 
-def get_output_path(commodity :str, pairing_distance : int  = None, due_shift : int  = None):
+def get_output_path(commodity :str, data_folder : str = None ,pairing_distance : int  = None, due_shift : int  = None):
 	if pairing_distance == None:
 		path = create_folder(output_folder = f'{commodity}')
 	else:
 		path = create_folder(output_folder = f'{commodity}/{pairing_distance}/{due_shift}')
+		if data_folder != None:
+			data_path = create_folder(output_folder = f'{commodity}/{pairing_distance}/{due_shift}/{data_folder}')
+			return path, data_path
 	return path
 
-def save_csv(data : pd.DataFrame ,path : str, filename : str, commodity : str):
-	io_name = f'{commodity}_{filename}'
+def save_csv(data : pd.DataFrame ,path : str, filename : str, commodity : str = None):
+	io_name = f'{commodity}_{filename}' if commodity != None else filename
 	if data.empty:
 		logger.warning(f'File : {io_name} Not Saved, empty dataframe')
 	else:
-		data.to_csv(f'{path}/{io_name}.csv')
+		data.to_csv(f'{path}/{io_name}.csv', sep = '\t')
 		logger.info(f'File : {io_name} Saved')
+
+
+
+
+
 
 
 
