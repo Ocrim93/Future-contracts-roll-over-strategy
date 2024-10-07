@@ -5,7 +5,6 @@ class PATH(Enum):
 	Output = './Output'
 	database = f'{Input}/new_database'
 	fututes_info = f'{Input}/futures_info.csv'
-	data_folder = 'data'
 	Trading_settings = './Trading_settings.yml'
 
 class FILENAME(Enum):
@@ -13,6 +12,8 @@ class FILENAME(Enum):
 	PnL = 'PnL'
 	Sharp_Ratio  = 'sharp_ratio'
 	Futures_Pairing = 'futures_pairing'
+	data_folder = 'data'
+
 
 
 class GRAPH(Enum):

@@ -258,7 +258,7 @@ class BackTest():
 
 	def single_run(self, distance, due_shift):
 		logger.info(f'Starting configuration distance {distance} with due shift {due_shift}: {self.configuration[distance]}' )	
-		self.configuration_path, self.data_path = utilities.get_output_path(self.commodity,PATH.data_folder.value,distance,due_shift)
+		self.configuration_path, self.data_path = utilities.get_output_path(self.commodity,FILENAME.data_folder.value,distance,due_shift)
 		logger.info(f'For the commodity {self.commodity} discovering future pairing ') 
 		expiration_date_df = self.futures_pairing(distance, due_shift)
 		if expiration_date_df.empty:
@@ -354,7 +354,7 @@ class BackTest():
 		
 		# in case specific run is enabled 
 		if self.specific_run != None :
-			self.configuration_path, self.data_path = utilities.get_output_path(self.commodity,PATH.data_folder.value,self.specific_run[0],self.specific_run[1])
+			self.configuration_path, self.data_path = utilities.get_output_path(self.commodity,FILENAME.data_folder.value,self.specific_run[0],self.specific_run[1])
 			utilities.log_inizialization(self.configuration_path)
 			self.single_run(self.specific_run[0],self.specific_run[1])
 		else:
