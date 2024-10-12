@@ -50,7 +50,7 @@ class COLUMN(Enum):
 	Distance = 'Distance'
 	# Shift in rolling over dates
 	Due_Shift = 'Due Shift'
-	STD_annualized = 'STD nnualized'
+	STD_annualized = 'STD annualized'
 	Cuml_PnL = 'Cuml_P&L'	
 	Cuml_PnL_annualized = 'Cumulative P&L annualized'
 	Performance_Ratio = 'Performance Ratio'
