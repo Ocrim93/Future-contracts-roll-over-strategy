@@ -7,6 +7,5 @@ from Code.Trading_Indicator import Trading_Indicator
 database = load_database(PATH.database.value)
 
 for comm in database:
-	b = BackTest(comm, specific_run= [1,1])		
+	b = BackTest(comm)		
 	b.run()
-Trading_Indicator('CL', 1,1)
